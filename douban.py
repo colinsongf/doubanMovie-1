@@ -12,6 +12,7 @@ import time
 import signal
 
 exit_flag = False
+csvfile = None
     
 headers = {'user-agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/38.0'}
 
@@ -281,14 +282,18 @@ def save_progress():
 
 
 def signal_handler(signal, frame):
-        print('Ctrl+C pressed, stopping the worker....')
-        exit_flag = True
-        csvfile.close() 
-        save_progress()
-        sys.exit(0)
+    global exit_flag
+    global csvfile
+    print('Ctrl+C pressed, stopping the worker....')
+    exit_flag = True
+    csvfile.close() 
+    save_progress()
+    sys.exit(0)
  
 
 def get_movie_info_worker():
+    global exit_flag
+    global csvfile
     TOME_INTERVAL=5
     load_saved_lists()
     if len(to_visted_movies) == 0:  
