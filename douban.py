@@ -1,10 +1,5 @@
 
 # coding: utf-8
-
-# In[21]:
-
-
-# In[30]:
 #!/usr/bin/env python
 
 import sys
@@ -128,6 +123,7 @@ def get_num_of_watched(soup, url):
         num_watched = None
     return num_watched
 
+
 def get_num_of_wanted(soup, url):
     num_want = None
     try:
@@ -194,7 +190,8 @@ def get_doulist_ids_from_doulist_idx(url):
             ret = doulist_id
             if doulist_id not in visited_doulist and doulist_id not in to_visited_doulist:
                 to_visited_doulist.add(doulist_id)
-                
+  
+
 def get_movie_ids_from_doulist(links):
     dlre = re.compile('http://movie.douban.com/subject/(\d+)/')
     for link in links:
@@ -205,6 +202,7 @@ def get_movie_ids_from_doulist(links):
             ret = movie_id
             if movie_id not in visted_movies and movie_id not in to_visted_movies:
                 to_visted_movies.add(movie_id)
+
 
 def get_doulist_ids_from_doulist(links):
     dlre = re.compile('http://www.douban.com/doulist/(\d+)/')
@@ -281,13 +279,15 @@ def save_progress():
     list_writer('to_visted_movies.txt', to_visted_movies)
     list_writer('failed_movies.txt', failed_movies)
 
+
 def signal_handler(signal, frame):
         print('Ctrl+C pressed, stopping the worker....')
         exit_flag = True
         csvfile.close() 
         save_progress()
         sys.exit(0)
-        
+ 
+
 def get_movie_info_worker():
     TOME_INTERVAL=5
     load_saved_lists()
@@ -354,10 +354,3 @@ def get_movie_info_worker():
 
 if __name__ == '__main__':
     get_movie_info_worker()
-    
-
-
-# In[ ]:
-
-exit
-
