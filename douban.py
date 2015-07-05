@@ -343,9 +343,8 @@ def get_movie_info_worker():
 
         for url in to_visited_doulist.copy():
             ret = parse_doulist_page(url)
-            if ret and url not in visited_doulist:
+            if  url not in visited_doulist:
                 visited_doulist.add(url)
-
                 if len(to_visted_movies) > 50:
                     break
                 num_of_doulist += 1
