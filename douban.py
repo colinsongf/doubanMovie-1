@@ -142,7 +142,7 @@ def get_num_of_wanted(soup, url):
 def get_soup_content(url):
     soup = None
     try:
-        html = requests.get(url, headers=headers)
+        html = requests.get(url, headers=headers, timeout=10)
         if html.status_code != 200:
             print 'get %s failed: %d '%(url, html.status_code)
             return None
@@ -294,7 +294,7 @@ def signal_handler(signal, frame):
 def get_movie_info_worker():
     global exit_flag
     global csvfile
-    TOME_INTERVAL=5
+    TOME_INTERVAL=4
     load_saved_lists()
     if len(to_visted_movies) == 0:  
         parse_doulist_page('http://www.douban.com/doulist/240962/')
