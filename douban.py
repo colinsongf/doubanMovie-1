@@ -518,7 +518,7 @@ def get_movie_info_worker():
                 print "failed to get movie: ", url
                 # failed_movies.add(url)
             to_visit_movie.remove(url)
-            time.sleep(TOME_INTERVAL)
+            # time.sleep(TOME_INTERVAL)
 
         for url in to_visit_doulist_idxs.copy():
             get_doulist_ids_from_doulist_idx(url)
@@ -529,7 +529,7 @@ def get_movie_info_worker():
                     break
             print 'get %d doulist index' % num_of_doulistidx
             to_visit_doulist_idxs.remove(url)
-            time.sleep(TOME_INTERVAL)
+            # time.sleep(TOME_INTERVAL)
 
         for url in to_visit_doulist.copy():
             parse_doulist_page(url)
@@ -540,10 +540,8 @@ def get_movie_info_worker():
                 num_of_doulist += 1
             print 'get %d doulist page...' % num_of_doulist
 
-
-
             to_visit_doulist.remove(url)
-            time.sleep(TOME_INTERVAL)
+            # time.sleep(TOME_INTERVAL)
 
     csvfile.close()
     save_progress()
