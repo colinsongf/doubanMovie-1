@@ -558,7 +558,7 @@ def get_movie_info_worker():
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     import os.path
     
-    if os.path.isfile(db_filename):
+    if not os.path.isfile(db_filename):
         csvfile = open(db_filename, 'w+')
         writer = csv.DictWriter(csvfile, fieldnames=info.keys())
         writer.writeheader()
