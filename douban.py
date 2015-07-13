@@ -10,16 +10,12 @@ import datetime
 import csv
 import time
 import signal
-
-
-exit_flag = False
-csvfile = None
-
+import threading
+import os
 
 visited_doulist = set()
 to_visit_doulist = set()
 
-# o_visit_douindex, visited_douindex
 visited_doulist_idxs = set()
 to_visit_doulist_idxs = set()
 
@@ -32,6 +28,9 @@ visited_people = set()
 to_visit_peoplelist = set()
 visited_peoplelist = set()
 
+list_lock = threading.Lock()
+file_lock = threading.Lock()
+
 people_pattern = re.compile('http://movie.douban.com/people/(\w+)/')
 movie_pattern = re.compile('http://movie.douban.com/subject/(\d+)/')
 list_pattern = re.compile('http://www.douban.com/doulist/(\d+)/')
@@ -39,8 +38,20 @@ index_pattern = re.compile('http://movie.douban.com/subject/(\d+)/doulists')
 peoplelist_pattern = re.compile('http://movie.douban.com/subject/(\d+)/collections')
 
 def add_to_set(id, to_visit_set, visited_set):
+    list_lock.acquire()
     if id not in visited_set:
         to_visit_set.add(id)
+    list_lock.release()
+
+
+def update_visit_data(id, to_visit_set, visited_set):
+    list_lock.acquire()
+    if id not in visited_set:
+        visited_set.add(id)
+    if id in to_visit_set:
+        to_visit_set.remove(id)
+    list_lock.release()
+
 
 def parse_webpage_to_list(soup):
     links = soup.find_all('a')
@@ -71,7 +82,7 @@ def parse_webpage_to_list(soup):
             id = link_url       
             add_to_set(id, to_visit_doulist, visited_doulist)
 
-        #match index
+        #match doulist index
         match = re.search(index_pattern, link_url)
         if match:
             id = link_url
@@ -83,8 +94,9 @@ def parse_webpage_to_list(soup):
             id = link_url
             add_to_set(id, to_visit_peoplelist, visited_peoplelist)
 
+
 def get_soup_content(url):
-    print 'visiting ' + url
+#     print 'visiting ' + url
     soup = None
     cookie = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(11))
     headers = {'Cookie': 'bid=' + '"' + str(cookie) + '"'}    
@@ -101,16 +113,10 @@ def get_soup_content(url):
     return soup
 
 
-
 def parse_peoplelist_page(url):
     soup = get_soup_content(url)
     if not soup:
         return
-    
-    if url in to_visit_peoplelist:
-        to_visit_peoplelist.remove(url)
-    visited_peoplelist.add(url)
-    parse_webpage_to_list(soup)
     
     try:
         paginator = soup.find(attrs={"class":"paginator"})
@@ -120,15 +126,20 @@ def parse_peoplelist_page(url):
         if match:
             pid = next_page
             add_to_set(pid, to_visit_peoplelist, visited_peoplelist)
+
     except:
         pass
+    
+    update_visit_data(url, to_visit_peoplelist, visited_peoplelist)
+
 
 def save_user_ratings(file_name, user_id, rating_list):
-    # print "save file for {}, {}".format(file_name, user_id) 
+    file_lock.acquire()
     with open(file_name, "a+") as user_ratings:
         for (mid, rating, date_rated) in rating_list:
-            # print '{},{},{},{}\n'.format(user_id, mid, rating, date_rated)
             user_ratings.write('{},{},{},{}\n'.format(user_id, mid, rating, date_rated))
+    file_lock.release()
+
             
 def parse_item_rating_info(item):
     try:
@@ -147,13 +158,13 @@ def parse_item_rating_info(item):
         match = re.search(r'rating(\d)-t', str(rate_span))
         if match:
             rating = match.group(1)
-        # print mid, rating, date_rated
         return mid, rating, date_rated
     except Exception as e:
-        # print e
         return None
 
+
 def get_user_movie_history(uid):
+    print "getting rating history of user %s ..."%str(uid)
     start_url = 'http://movie.douban.com/people/'+str(uid)+'/collect'
     user_movie_list = set()
     user_visited_movie = set()
@@ -161,8 +172,13 @@ def get_user_movie_history(uid):
     next_url = parse_user_movie_history(start_url, user_movie_list, user_visited_movie)
     while(next_url):
         next_url = parse_user_movie_history(next_url, user_movie_list, user_visited_movie)
+        
     save_user_ratings("user_ratings.txt", uid, user_movie_list)
+    update_visit_data(id, to_visit_people, visited_people)
+
+    print "getting rating history of user %s done"%str(uid)
     return user_movie_list
+
 
 def parse_user_movie_history(url, user_movie_list, user_visited_movie):
     soup = get_soup_content(url)
@@ -180,9 +196,7 @@ def parse_user_movie_history(url, user_movie_list, user_visited_movie):
   
     mlist = soup.find(attrs={"class":"grid-view"})
     if mlist and mlist.children:
-#         print items.children
         for item in mlist.children:
-#             print item
             try:
                 (mid, rating, date_rated) = parse_item_rating_info(item)
                 if mid not in user_visited_movie:
@@ -193,8 +207,9 @@ def parse_user_movie_history(url, user_movie_list, user_visited_movie):
                 pass
         
     parse_webpage_to_list(soup)
-    
+        
     return next_url
+
 
 def get_doulist_index_id(links):
     dlre = re.compile(r'http://movie.douban.com/subject/(\d+)/doulists')
@@ -334,6 +349,8 @@ def get_movie_detail_info(url):
     movie_info['num_want'] = get_num_of_wanted(soup, url)
     l = soup.find_all("a", text="全部")
     get_doulist_index_id(l)
+        
+    update_visit_data(url, to_visit_movie, visited_movie) 
 
     return movie_info
 
@@ -353,6 +370,8 @@ def get_doulist_ids_from_doulist_idx(url):
             doulist_id = match.group(0)
             if doulist_id not in visited_doulist and doulist_id not in to_visit_doulist:
                 to_visit_doulist.add(doulist_id)
+
+    update_visit_data(url, to_visit_doulist_idxs, visited_doulist_idxs)
 
 
 def get_movie_ids_from_doulist(links):
@@ -382,7 +401,7 @@ def get_doulist_ids_from_doulist(links):
 def parse_doulist_page(url):
     soup = get_soup_content(url)
     if not soup:
-        print 'get movie info failed at ' + url
+        print 'get doulist failed at ' + url
         return None
 
     movie_links = soup.find_all("a")
@@ -393,11 +412,10 @@ def parse_doulist_page(url):
             doulist_links = paginator.find_all("a")
             get_doulist_ids_from_doulist(doulist_links)
     except:
-        print "Unexpected error:", sys.exc_info()
         print 'parse doulist page failed: %s' % url
-        return None
-    return ret
-
+    
+    update_visit_data(url, to_visit_doulist, visited_doulist)
+    
 
 def list_writer(file_name, lst):
     f = open(file_name, 'wb+')
@@ -434,6 +452,7 @@ def load_saved_lists():
 
     load_list('to_visit_peoplelist.txt', to_visit_peoplelist)
     load_list('visited_peoplelist.txt', visited_peoplelist)
+    print "Progress loaded."
 
 def save_progress():
     list_writer('visited_doulist.txt', visited_doulist)
@@ -453,95 +472,142 @@ def save_progress():
 
     list_writer('to_visit_peoplelist.txt', to_visit_peoplelist)
     list_writer('visited_peoplelist.txt', visited_peoplelist)
+    
+    print "Progress saved."
 
 
-def signal_handler(signal, frame):
-    global exit_flag
-    global csvfile
-    print('Ctrl+C pressed, stopping the worker....')
-    exit_flag = True
-    csvfile.close()
-    # save_progress()
-    sys.exit(0)
+
+def user_rating_history_worker(pid):
+    get_user_movie_history(pid)
+
+
+def process_user_rating_history():
+    threads = []
+    for i in range(10):
+        if len(to_visit_people):
+            list_lock.acquire()
+            pid = to_visit_people.pop()
+            visited_people.add(pid)
+            list_lock.release()
+            t = threading.Thread(target=user_rating_history_worker, args=(pid,))
+            threads.append(t)
+            t.start()
+    
+    i = 0
+    for thread in threads:
+        thread.join()
+        i += 1
+        print "people thread join %d"%i
+
+
+def write_movie_record(record, db_filename):
+        with open(db_filename, 'a+') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=record.keys())
+            writer.writerow(record)
+
+def movie_detail_info_worker(url, db_filename):
+    
+    info = get_movie_detail_info(url)
+    if info:
+        file_lock.acquire()
+        print 'write movie to file'
+#         writer.writerow(info)
+        write_movie_record(info, db_filename)
+        file_lock.release()
+        print 'got %d movies: %s' % (len(visited_movie), info['title'])
+    else:
+        print "failed to get movie: ", url
+
+def process_movie_detail_info(db_filename):
+    threads = []
+    for i in range(10):
+        if len(to_visit_movie):
+            list_lock.acquire()
+            mid = to_visit_movie.pop()
+            visited_movie.add(mid)
+            list_lock.release()
+            t = threading.Thread(target=movie_detail_info_worker, args=(mid, db_filename))
+            threads.append(t)
+            t.start()
+    
+    i = 0
+    for thread in threads:
+        thread.join()
+        i += 1
+        print "movie info thread join %d"%i
+
 
 
 def get_movie_info_worker():
-    global exit_flag
-    global csvfile
-    TOME_INTERVAL = 0.001
+
+    exit_flag = False
+    db_filename = 'movie_db.csv'
+    
+    def signal_handler(signal, frame):
+        print('Ctrl+C pressed, stopping the worker....')
+        exit_flag = True
+        csvfile.close()
+        save_progress()
+        sys.exit(0)
+        
     load_saved_lists()
     if len(to_visit_movie) == 0:
         parse_doulist_page('http://www.douban.com/doulist/240962/')
 
     info = get_movie_detail_info('http://movie.douban.com/subject/3592854/')
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    csvfile = open('movie_db.csv', 'a+')
-    writer = csv.DictWriter(csvfile, fieldnames=info.keys())
-    writer.writeheader()
-
-    num_of_movies = 0
-    num_of_doulistidx = 0
-    num_of_doulist = 0
-    num_of_people = 0
-    num_of_peoplelist = 0
+    import os.path
+    
+    if os.path.isfile(db_filename):
+        csvfile = open(db_filename, 'w+')
+        writer = csv.DictWriter(csvfile, fieldnames=info.keys())
+        writer.writeheader()
+        csvfile.close()
 
     signal.signal(signal.SIGINT, signal_handler)
 
     while((len(to_visit_movie) or
            len(to_visit_doulist_idxs) or
            len(to_visit_doulist) or
-           len(to_visit_peoplelist)
-           ) and not exit_flag):
+           len(to_visit_peoplelist) or
+           len(to_visit_people)) 
+           and not exit_flag):
 
-        for url in to_visit_peoplelist.copy():
+        for url in to_visit_peoplelist.copy():  
             parse_peoplelist_page(url)
-            num_of_peoplelist += 1
-            print 'get %d peoplelist page...' % num_of_peoplelist
+            print 'got %d peoplelist page' % len(visited_peoplelist)
+            if to_visit_people > 50:
+                break
+        process_movie_detail_info(db_filename)    
+        process_user_rating_history()
+#         for pid in to_visit_people.copy():
+#             get_user_movie_history(pid)
+#             print 'got %d people history' % len(visited_people)
+#             if to_visit_movie > 50:
+#                 break
 
-        for pid in to_visit_people.copy():
-            get_user_movie_history(pid)
-            num_of_people += 1
-            to_visit_people.remove(pid)
-            if pid not in visited_peoplelist:
-                visited_peoplelist.add(pid)
-            print 'get %d people history...' % num_of_people
-
-        for url in to_visit_movie.copy():
-            info = get_movie_detail_info(url)
-            if info:
-                if url not in visited_movie:
-                    visited_movie.add(url)
-                writer.writerow(info)
-                num_of_movies += 1
-                print 'get %d movies: %s' % (num_of_movies, info['title'])
-            else:
-                print "failed to get movie: ", url
-                # failed_movies.add(url)
-            to_visit_movie.remove(url)
-            # time.sleep(TOME_INTERVAL)
+        
+#         for url in to_visit_movie.copy():
+#             info = get_movie_detail_info(url)
+#             if info:
+#                 writer.writerow(info)
+#                 print 'got %d movies: %s' % (len(visited_movie), info['title'])
+#             else:
+#                 print "failed to get movie: ", url
+# #             if to_visit_people > 50:
+#                 break
 
         for url in to_visit_doulist_idxs.copy():
             get_doulist_ids_from_doulist_idx(url)
-            if url not in visited_doulist_idxs:
-                visited_doulist_idxs.add(url)
-                num_of_doulistidx += 1
-                if len(to_visit_doulist) > 50:
-                    break
-            print 'get %d doulist index' % num_of_doulistidx
-            to_visit_doulist_idxs.remove(url)
-            # time.sleep(TOME_INTERVAL)
-
+            print 'got %d doulist index' % len(visited_doulist_idxs)
+            if len(to_visit_doulist) > 50:
+                break
+            
         for url in to_visit_doulist.copy():
             parse_doulist_page(url)
-            if url not in visited_doulist:
-                visited_doulist.add(url)
-                if len(to_visit_movie) > 50:
-                    break
-                num_of_doulist += 1
-            print 'get %d doulist page...' % num_of_doulist
-
-            to_visit_doulist.remove(url)
-            # time.sleep(TOME_INTERVAL)
+            print 'got %d doulist page' % len(visited_doulist)
+            if len(to_visit_movie) > 50:
+                break
 
     csvfile.close()
     save_progress()
