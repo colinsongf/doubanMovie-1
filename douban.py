@@ -96,7 +96,7 @@ def parse_webpage_to_list(soup):
 
 
 def get_soup_content(url):
-#     print 'visiting ' + url
+    print 'visiting ' + url
     soup = None
     cookie = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(11))
     headers = {'Cookie': 'bid=' + '"' + str(cookie) + '"'}    
@@ -375,27 +375,33 @@ def get_doulist_ids_from_doulist_idx(url):
 
 
 def get_movie_ids_from_doulist(links):
-    dlre = re.compile('http://movie.douban.com/subject/(\d+)/')
-    for link in links:
-        url = link.get('href')
-        match = re.search(dlre, url)
-        if match:
-            movie_id = match.group(0)
-            ret = movie_id
-            if movie_id not in visited_movie and movie_id not in to_visit_movie:
-                to_visit_movie.add(movie_id)
+    try:
+        dlre = re.compile('http://movie.douban.com/subject/(\d+)/')
+        for link in links:
+            url = link.get('href')
+            match = re.search(dlre, url)
+            if match:
+                movie_id = match.group(0)
+                ret = movie_id
+                if movie_id not in visited_movie and movie_id not in to_visit_movie:
+                    to_visit_movie.add(movie_id)
+    except Exception as e:
+        pass
 
 
 def get_doulist_ids_from_doulist(links):
-    dlre = re.compile('http://www.douban.com/doulist/(\d+)/')
-    for link in links:
-        url = link.get('href')
-        match = re.search(dlre, url)
-        if match:
-            url = match.group(0)
-            ret = url
-            if url not in visited_doulist and url not in to_visit_doulist:
-                to_visit_doulist.add(url)
+    try:
+        dlre = re.compile('http://www.douban.com/doulist/(\d+)/')
+        for link in links:
+            url = link.get('href')
+            match = re.search(dlre, url)
+            if match:
+                url = match.group(0)
+                ret = url
+                if url not in visited_doulist and url not in to_visit_doulist:
+                    to_visit_doulist.add(url)
+    except Exception as e:
+        pass
 
 
 def parse_doulist_page(url):
@@ -482,22 +488,31 @@ def user_rating_history_worker(pid):
 
 
 def process_user_rating_history():
-    threads = []
-    for i in range(10):
-        if len(to_visit_people):
-            list_lock.acquire()
-            pid = to_visit_people.pop()
-            visited_people.add(pid)
-            list_lock.release()
-            t = threading.Thread(target=user_rating_history_worker, args=(pid,))
-            threads.append(t)
-            t.start()
-    
-    i = 0
-    for thread in threads:
-        thread.join()
-        i += 1
-        print "people thread join %d"%i
+    print "start to get get rating data..."
+    while(True):
+        if len(to_visit_people) == 0:
+            print 'no work to do, sleep 10 seconds'
+            time.sleep(10)
+        threads = []
+        for i in range(3):
+            if len(to_visit_people):
+                list_lock.acquire()
+                pid = to_visit_people.pop()
+                visited_people.add(pid)
+                list_lock.release()
+                t = threading.Thread(target=user_rating_history_worker, args=(pid,))
+                threads.append(t)
+                t.start()
+        
+        i = 0
+        for thread in threads:
+            thread.join()
+            i += 1
+            print "people thread join %d"%i
+
+def user_rating_thread():
+    t = threading.Thread(target=process_user_rating_history)
+    t.start()
 
 
 def write_movie_record(record, db_filename):
@@ -519,24 +534,31 @@ def movie_detail_info_worker(url, db_filename):
         print "failed to get movie: ", url
 
 def process_movie_detail_info(db_filename):
-    threads = []
-    for i in range(10):
-        if len(to_visit_movie):
-            list_lock.acquire()
-            mid = to_visit_movie.pop()
-            visited_movie.add(mid)
-            list_lock.release()
-            t = threading.Thread(target=movie_detail_info_worker, args=(mid, db_filename))
-            threads.append(t)
-            t.start()
-    
-    i = 0
-    for thread in threads:
-        thread.join()
-        i += 1
-        print "movie info thread join %d"%i
+    print "start to get movie info...."
+    while(True):
+        if len(to_visit_movie) == 0:
+            print "no work to do, sleep 10 seconds."
+            time.sleep(10)
+        threads = []
+        for i in range(3):
+            if len(to_visit_movie):
+                list_lock.acquire()
+                mid = to_visit_movie.pop()
+                visited_movie.add(mid)
+                list_lock.release()
+                t = threading.Thread(target=movie_detail_info_worker, args=(mid, db_filename))
+                threads.append(t)
+                t.start()
+        
+        i = 0
+        for thread in threads:
+            thread.join()
+            i += 1
+            print "movie info thread join %d"%i
 
-
+def movie_info_thread(db_filename):
+    t = threading.Thread(target=process_movie_detail_info, args=(db_filename, ))
+    t.start()
 
 def get_movie_info_worker():
 
@@ -552,7 +574,7 @@ def get_movie_info_worker():
         
     load_saved_lists()
     if len(to_visit_movie) == 0:
-        parse_doulist_page('http://www.douban.com/doulist/240962/')
+        parse_doulist_page('http://movie.douban.com/')
 
     info = get_movie_detail_info('http://movie.douban.com/subject/3592854/')
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -566,6 +588,8 @@ def get_movie_info_worker():
 
     signal.signal(signal.SIGINT, signal_handler)
 
+    user_rating_thread()
+    movie_info_thread(db_filename)
     while((len(to_visit_movie) or
            len(to_visit_doulist_idxs) or
            len(to_visit_doulist) or
@@ -578,8 +602,10 @@ def get_movie_info_worker():
             print 'got %d peoplelist page' % len(visited_peoplelist)
             if to_visit_people > 50:
                 break
-        process_movie_detail_info(db_filename)    
-        process_user_rating_history()
+        # while(len(to_visit_movie)):
+        # 	process_movie_detail_info(db_filename)
+        # while(len(to_visit_people)) 
+        # 	process_user_rating_history()
 #         for pid in to_visit_people.copy():
 #             get_user_movie_history(pid)
 #             print 'got %d people history' % len(visited_people)
